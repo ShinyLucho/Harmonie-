@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c140c">
+<meta name="description" content="Compteur de points pour jeu de plateau : 5 catégories de paysage + cartes, historique des parties et classement des joueurs. Fonctionne hors-ligne.">
+<title>Compteur de points</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Points">
+<style>
+  :root{
+    --wood:#231910; --wood-hi:#2f2216; --bar:rgba(28,20,12,.94);
+    --ink:#2b241b; --ink-soft:#6f604a; --paper:#cdb68b; --paper-edge:#b89c6a;
+    --slot:#f2ead6; --slot-edge:#d7c59d; --tape:rgba(236,227,203,.82);
+    --gold:#caa53a; --red:#a5432f; --cream:#e9dcc2; --muted:#b39d75;
+    --c-left:#4f8b3b; --c-right:#2c93b4;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  html{-webkit-text-size-adjust:100%;background:var(--wood)}
+  .pill,.h-win,.h-pl,.h-list{text-transform:uppercase}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(120% 80% at 50% -10%,var(--wood-hi),var(--wood)) fixed;
+    min-height:100vh;color:var(--ink);
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+  }
+  body[data-tab=game]{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
+  button{cursor:pointer;font:inherit;color:inherit}
+  button:disabled{cursor:default}
+  :focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+  svg{flex-shrink:0}
+  .ghost{background:transparent;border:none;padding:6px;border-radius:8px;color:var(--ink-soft);display:inline-grid;place-items:center}
+  .ghost:hover{background:rgba(0,0,0,.06)}
+  .ghost.armed{background:var(--red);color:#fff;font-size:12px;font-weight:700;padding:6px 9px}
+  button:active:not(:disabled){transform:scale(.97)}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 16px}
+
+  /* header */
+  header{position:sticky;top:0;z-index:5;background:var(--bar);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-bottom:1px solid rgba(255,255,255,.06);padding-top:env(safe-area-inset-top)}
+  .head-in{max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .brand{flex:1;min-width:150px}
+  .title{color:#fff;font-weight:800;font-size:18px}
+  .sub{color:var(--muted);font-size:12px;margin-top:1px}
+  .tabs{display:flex;background:rgba(255,255,255,.06);border-radius:11px;padding:3px}
+  .tab{border:none;border-radius:9px;padding:7px 11px;font-size:13px;font-weight:700;background:transparent;color:#cbb894;
+    display:inline-flex;align-items:center;gap:6px;transition:background .15s,color .15s}
+  .tab[aria-selected=true]{background:var(--gold);color:var(--wood)}
+  @media (max-width:420px){.tab span{display:none}.tab{padding:8px 12px}}
+
+  .strip{max-width:1100px;margin:0 auto;padding:0 16px 10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}
+  .strip::-webkit-scrollbar{display:none}
+  body:not([data-tab=game]) .strip{display:none}
+  .pill{flex-shrink:0;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--cream);
+    border-radius:999px;padding:5px 11px;font-size:13px;font-weight:600;white-space:nowrap}
+  .pill b{color:#fff;margin-left:4px}
+  .pill.lead{border-color:var(--gold);background:rgba(202,165,58,.16)}
+
+  .notice{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(202,165,58,.14);border:1px solid rgba(202,165,58,.45);
+    color:var(--cream);border-radius:12px;padding:10px 12px;margin-bottom:22px;font-size:14px;font-weight:600}
+  .notice span{flex:1}
+  .notice button{border:none;background:var(--gold);color:var(--wood);border-radius:8px;padding:6px 10px;font-weight:700;font-size:13px}
+  .notice.warn{background:rgba(165,67,47,.18);border-color:rgba(165,67,47,.6)}
+
+  /* player cards */
+  .grid{display:grid;gap:26px 16px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));margin-top:12px}
+  .card{position:relative;background:linear-gradient(180deg,var(--paper),var(--paper-edge));border-radius:18px;
+    padding:30px 16px 16px;box-shadow:0 8px 18px rgba(0,0,0,.28);scroll-margin-top:130px;transition:box-shadow .2s}
+  .card.leader{box-shadow:0 0 0 2px var(--gold),0 10px 22px rgba(0,0,0,.35)}
+  .card.flashy{box-shadow:0 0 0 3px #fff,0 10px 22px rgba(0,0,0,.35)}
+  .tape{position:absolute;top:-13px;left:50%;transform:translateX(-50%) rotate(-1.4deg);background:var(--tape);border-radius:4px;
+    padding:5px 12px;width:170px;max-width:70%;box-shadow:0 2px 6px rgba(0,0,0,.18);
+    background-image:repeating-linear-gradient(180deg,rgba(0,0,0,.03) 0 3px,transparent 3px 6px)}
+  .name{width:100%;text-align:center;border:none;background:transparent;outline:none;color:var(--ink);font-weight:800;
+    letter-spacing:1.5px;text-transform:uppercase;font-size:15px;padding:0}
+  .name::placeholder{color:#9a8a6c;letter-spacing:1px}
+  .name:focus{box-shadow:0 2px 0 var(--ink-soft)}
+  .rankchip{position:absolute;top:6px;left:10px;font-size:15px;font-weight:800;color:var(--ink-soft)}
+  .rmpl{position:absolute;top:6px;right:6px}
+
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .token{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--c);color:#fff;
+    box-shadow:inset 0 -2px 4px rgba(0,0,0,.18);flex-shrink:0}
+  .lab{flex:1;font-weight:600;font-size:14px}
+  .slot{width:62px;font-size:18px;font-weight:700;color:var(--ink);text-align:center;padding:8px 6px;border-radius:10px;
+    border:1.5px solid var(--slot-edge);background:var(--slot);outline:none;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+  .slot::placeholder{color:#c9b995}
+  .slot:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(202,165,58,.3)}
+  .subline{display:flex;justify-content:space-between;align-items:center;margin-top:4px;padding-top:6px;
+    border-top:1px dashed var(--paper-edge);color:var(--ink-soft);font-size:13px;font-weight:700}
+  .subline b{color:var(--ink);font-size:15px;font-variant-numeric:tabular-nums}
+  .cards-h{display:flex;align-items:center;gap:8px;margin:14px 0 8px;font-weight:700;font-size:14px}
+  .cards-h svg{color:var(--ink-soft)}
+  .cardrow{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .cidx{width:22px;color:var(--ink-soft);font-size:12px;font-weight:700}
+  .addcard{display:inline-flex;align-items:center;gap:6px;color:var(--ink);background:rgba(255,255,255,.35);
+    border:1px solid var(--paper-edge);padding:6px 10px;border-radius:10px;font-weight:600;font-size:13px}
+  .totbar{margin-top:12px;background:var(--wood-hi);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+  .totbar .l{color:var(--cream);font-weight:700;letter-spacing:1px;font-size:13px;text-transform:uppercase}
+  .totbar .v{color:#fff;font-weight:800;font-size:26px;line-height:1;font-variant-numeric:tabular-nums}
+  .addplayer{margin-top:18px;width:100%;display:flex;justify-content:center;align-items:center;gap:8px;color:var(--cream);
+    background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.2);padding:13px;border-radius:13px;font-weight:700}
+
+  /* ranking + history */
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  .toolbar .meta{flex:1;color:var(--muted);font-size:13px;font-weight:600;min-width:140px}
+  .tbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);
+    color:var(--cream);border-radius:10px;padding:8px 11px;font-weight:700;font-size:13px}
+  .sortbar{display:flex;gap:6px;margin-bottom:14px}
+  .sortbtn{flex:1;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.05);color:#cbb894;border-radius:10px;padding:9px 6px;font-weight:700;font-size:13px}
+  .sortbtn[aria-pressed=true]{background:var(--gold);color:var(--wood);border-color:var(--gold)}
+  .lb{background:linear-gradient(180deg,var(--paper),var(--paper-edge));border-radius:14px;padding:14px;box-shadow:0 6px 14px rgba(0,0,0,.26);margin-bottom:12px}
+  .lb-top{display:flex;align-items:center;gap:10px}
+  .lb-rank{font-size:20px;font-weight:800;min-width:34px}
+  .lb-name{flex:1;font-weight:800;font-size:16px;text-transform:uppercase;letter-spacing:.8px;overflow-wrap:anywhere}
+  .lb-big{font-weight:800;font-size:22px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .lb-big small{font-size:12px;color:var(--ink-soft);font-weight:700;margin-left:3px}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+  .stat{background:rgba(255,255,255,.28);border-radius:10px;padding:8px 4px;text-align:center}
+  .stat .k{color:var(--ink-soft);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+  .stat .n{font-size:18px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums}
+  .split{margin-top:12px}
+  .split-bar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:rgba(0,0,0,.1)}
+  .split-bar i{display:block;height:100%}
+  .split-leg{display:flex;justify-content:space-between;font-size:12px;color:var(--ink-soft);font-weight:700;margin-top:5px}
+  .split-leg span::before{content:"";display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--dot);margin-right:5px}
+
+  .h-date{color:var(--ink-soft);font-size:12px;font-weight:600}
+  .h-win{font-weight:800;font-size:16px;display:flex;align-items:center;gap:6px;margin-top:2px}
+  .h-win svg{color:#9a7a14}
+  .h-list{font-size:13px;color:var(--ink-soft);margin-top:4px;font-weight:600}
+  .h-detail{margin-top:10px;border-top:1px dashed var(--paper-edge);padding-top:10px}
+  .h-pl{display:flex;justify-content:space-between;font-weight:800;font-size:14px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 12px}
+  .chip{font-size:12px;font-weight:700;background:rgba(255,255,255,.35);border-radius:7px;padding:3px 7px;display:inline-flex;align-items:center;gap:5px}
+  .chip i{width:8px;height:8px;border-radius:50%;background:var(--c);display:inline-block}
+  .h-actions{display:flex;gap:8px;justify-content:flex-end}
+  .h-actions button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--paper-edge);background:rgba(255,255,255,.3);
+    border-radius:9px;padding:6px 10px;font-weight:700;font-size:13px;color:var(--ink)}
+  .h-actions button.armed{background:var(--red);border-color:var(--red);color:#fff}
+  .chev{transition:transform .2s}
+  [aria-expanded=true] .chev{transform:rotate(180deg)}
+
+  .empty{text-align:center;color:#c9b48a;padding:60px 20px}
+  .empty strong{display:block;font-size:16px;margin:12px 0 6px}
+  .empty p{color:#a08f6d;font-size:14px;margin:0}
+
+  /* toast + action bar */
+  #toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:999px;font-weight:700;font-size:14px;box-shadow:0 8px 20px rgba(0,0,0,.4);z-index:20;
+    opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;max-width:calc(100% - 32px);text-align:center}
+  #toast.show{opacity:1;transform:translate(-50%,-4px)}
+  footer{position:fixed;bottom:0;left:0;right:0;z-index:10;background:var(--bar);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-top:1px solid rgba(255,255,255,.07);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
+  body:not([data-tab=game]) footer{display:none}
+  .bar-in{max-width:1100px;margin:0 auto;display:flex;gap:10px}
+  .btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;border:none;padding:13px 10px;border-radius:12px;font-weight:700;font-size:15px}
+  .btn-reset{flex:1;background:rgba(255,255,255,.08);color:#fff}
+  .btn-reset.armed{background:var(--red)}
+  .btn-save{flex:1.4;background:var(--gold);color:var(--wood);font-weight:800}
+  .btn-save:disabled{background:rgba(202,165,58,.22);color:var(--cream)}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body data-tab="game">
+  <header>
+    <div class="head-in">
+      <div class="brand">
+        <div class="title">Compteur de points</div>
+        <div class="sub">Arbres · Roches · Champs · Maison · Rivière + cartes</div>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button class="tab" role="tab" data-act="tab" data-tab="game" aria-selected="true"></button>
+        <button class="tab" role="tab" data-act="tab" data-tab="ranking" aria-selected="false"></button>
+        <button class="tab" role="tab" data-act="tab" data-tab="history" aria-selected="false"></button>
+      </nav>
+    </div>
+    <div class="strip" id="strip" aria-label="Scores en direct"></div>
+  </header>
+
+  <main class="wrap" id="view"></main>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <footer id="bar"></footer>
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+
+<script>
+'use strict';
+/* ================= config ================= */
+const CATS = [
+  { key: 'arbres',  label: 'Arbres',  color: '#4f8b3b' },
+  { key: 'roches',  label: 'Roches',  color: '#5e72a6' },
+  { key: 'champs',  label: 'Champs',  color: '#c6971f' },
+  { key: 'maison',  label: 'Maison',  color: '#bc3f86' },
+  { key: 'riviere', label: 'Rivière', color: '#2c93b4' },
+];
+const STORE_KEY = 'compteur-points:v2';
+
+/* ================= icons ================= */
+const ICONS = {
+  arbres:'<path d="M12 3 6 11h3l-4 6h14l-4-6h3z"/><path d="M12 17v4"/>',
+  roches:'<path d="m3 19 6-11 4 6 2-3 6 8z"/>',
+  champs:'<path d="M12 21V9"/><path d="M12 13c-2.5 0-4-1.5-4-4 2.5 0 4 1.5 4 4zM12 13c2.5 0 4-1.5 4-4-2.5 0-4 1.5-4 4zM12 8.5c-2 0-3-1.3-3-3.2 2 0 3 1.3 3 3.2zM12 8.5c2 0 3-1.3 3-3.2-2 0-3 1.3-3 3.2z"/>',
+  maison:'<path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-5h4v5"/>',
+  riviere:'<path d="M3 8c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/><path d="M3 14c2-2 4-2 6 0s4 2 6 0 4-2 6 0"/>',
+  gem:'<path d="M6 3h12l3 5-9 12L3 8z"/><path d="M3 8h18M9 3 7 8l5 12 5-12-2-5"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  x:'<path d="M6 6l12 12M18 6 6 18"/>',
+  save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  check:'<path d="m5 12 5 5L20 7"/>',
+  refresh:'<path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+  trophy:'<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 5H4v2a3 3 0 0 0 3 3M17 5h3v2a3 3 0 0 1-3 3"/>',
+  list:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 10h6M9 14h6"/>',
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
+  edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>',
+  down:'<path d="M12 4v12M6 10l6 6 6-6M4 20h16"/>',
+  up:'<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+  chev:'<path d="m6 9 6 6 6-6"/>',
+};
+const icon = (n, s = 18) =>
+  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]}</svg>`;
+
+/* ================= helpers ================= */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const num = v => { const x = parseInt(v, 10); return Number.isFinite(x) ? x : 0; };
+const cleanNum = v => String(v).replace(/[^\d-]/g, '').replace(/(?!^)-/g, '').slice(0, 4);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const emptyCats = () => Object.fromEntries(CATS.map(c => [c.key, '']));
+const newPlayer = (name = '') => ({ id: uid(), name, cats: emptyCats(), cards: [''] });
+const leftOf  = p => CATS.reduce((s, c) => s + num(p.cats[c.key]), 0);
+const rightOf = p => p.cards.reduce((s, v) => s + num(v), 0);
+const totalOf = p => leftOf(p) + rightOf(p);
+const medal = r => ['🥇', '🥈', '🥉'][r - 1] || '#' + r;
+const nameKey = s => String(s).trim().toLocaleUpperCase('fr-FR');
+const shownName = (p, i) => p.name.trim() || `Joueur ${i + 1}`;
+const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
+/* competition ranking: ties share a rank (1, 1, 3) */
+const ranksOf = vals => { const s = [...vals].sort((a, b) => b - a); return vals.map(v => s.indexOf(v) + 1); };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= storage ================= */
+const store = (() => {
+  let ok = false;
+  try { localStorage.setItem('__cp', '1'); localStorage.removeItem('__cp'); ok = true; } catch (e) {}
+  return {
+    ok,
+    load() { if (!ok) return null; try { return JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { return null; } },
+    save(d) { if (ok) try { localStorage.setItem(STORE_KEY, JSON.stringify(d)); } catch (e) {} },
+  };
+})();
+
+function sanitizePlayer(p) {
+  const cats = emptyCats();
+  CATS.forEach(c => { const v = p?.cats?.[c.key]; if (v !== undefined && v !== null && v !== '') cats[c.key] = cleanNum(v); });
+  const cards = Array.isArray(p?.cards) && p.cards.length ? p.cards.map(v => (v === '' || v == null) ? '' : cleanNum(v)) : [''];
+  return { id: typeof p?.id === 'string' ? p.id : uid(), name: String(p?.name ?? '').slice(0, 24), cats, cards };
+}
+function sanitizeGame(g) {
+  return {
+    id: String(g.id), ts: Number(g.ts) || Date.now(),
+    players: g.players.map(p => {
+      const cats = Object.fromEntries(CATS.map(c => [c.key, num(p?.cats?.[c.key])]));
+      const cards = Array.isArray(p?.cards) ? p.cards.map(num) : [];
+      const left = p?.cats ? Object.values(cats).reduce((a, b) => a + b, 0) : num(p?.left);
+      const right = cards.length ? cards.reduce((a, b) => a + b, 0) : num(p?.right);
+      return { name: String(p?.name ?? 'Sans nom').slice(0, 24) || 'Sans nom', cats, cards, left, right, total: left + right };
+    }),
+  };
+}
+
+const saved = store.load() || {};
+const S = {
+  tab: 'game',
+  rankSort: 'wins',
+  open: new Set(),
+  players: Array.isArray(saved.players) && saved.players.length ? saved.players.map(sanitizePlayer) : [newPlayer(), newPlayer(), newPlayer()],
+  history: Array.isArray(saved.history) ? saved.history.filter(g => g && Array.isArray(g.players) && g.players.length).map(sanitizeGame) : [],
+  savedId: saved.savedId || null,     // set when the current sheet matches a saved game
+  editingId: saved.editingId || null, // set when a saved game was reopened for correction
+};
+
+let persistTimer;
+const snapshot = () => ({ players: S.players, history: S.history, savedId: S.savedId, editingId: S.editingId });
+function persist(now) {
+  clearTimeout(persistTimer);
+  if (now) store.save(snapshot());
+  else persistTimer = setTimeout(() => store.save(snapshot()), 200);
+}
+addEventListener('pagehide', () => persist(true));
+document.addEventListener('visibilitychange', () => { if (document.hidden) persist(true); });
+
+/* ================= dom refs ================= */
+const view = document.getElementById('view');
+const bar = document.getElementById('bar');
+const strip = document.getElementById('strip');
+const toastEl = document.getElementById('toast');
+const importFile = document.getElementById('importFile');
+
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast.t);
+  toast.t = setTimeout(() => toastEl.classList.remove('show'), 2300);
+}
+
+/* two-tap confirmation on a button; returns true on the second tap */
+function confirmTap(btn, label) {
+  if (btn.dataset.armed) return true;
+  const old = btn.innerHTML;
+  btn.dataset.armed = '1';
+  btn.classList.add('armed');
+  btn.innerHTML = label;
+  setTimeout(() => { if (!btn.isConnected) return; delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = old; }, 3000);
+  return false;
+}
+
+/* ================= render ================= */
+const TABS = { game: ['grid', 'Partie'], ranking: ['trophy', 'Classement'], history: ['list', 'Historique'] };
+document.querySelectorAll('.tab').forEach(t => { const [ic, l] = TABS[t.dataset.tab]; t.innerHTML = `${icon(ic, 15)}<span>${l}</span>`; t.setAttribute('aria-label', l); });
+
+function render() {
+  document.body.dataset.tab = S.tab;
+  document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === S.tab)));
+  view.innerHTML = S.tab === 'game' ? gameHTML() : S.tab === 'ranking' ? rankingHTML() : historyHTML();
+  if (S.tab === 'game') updateTotals();
+  renderBar();
+}
+
+/* ---------- game ---------- */
+function knownNames() {
+  const inGame = new Set(S.players.map(p => nameKey(p.name)));
+  const seen = new Set(), out = [];
+  S.history.forEach(g => g.players.forEach(p => {
+    const k = nameKey(p.name);
+    if (!seen.has(k) && !inGame.has(k)) { seen.add(k); out.push(p.name); }
+  }));
+  return out;
+}
+
+function playerHTML(p, i) {
+  return `<article class="card" data-pid="${p.id}">
+    <span class="rankchip" data-out="rank"></span>
+    <button class="ghost rmpl" data-act="rm-player" aria-label="Retirer ${esc(shownName(p, i))}">${icon('x', 16)}</button>
+    <div class="tape"><input class="name" data-f="name" value="${esc(p.name)}" placeholder="Joueur ${i + 1}" list="known-names"
+      autocomplete="off" autocapitalize="characters" maxlength="24" enterkeyhint="next" aria-label="Nom du joueur ${i + 1}"></div>
+    ${CATS.map(c => `<label class="row">
+      <span class="token" style="--c:${c.color}">${icon(c.key, 17)}</span>
+      <span class="lab">${c.label}</span>
+      <input class="slot" data-f="cat" data-k="${c.key}" value="${esc(p.cats[c.key])}" placeholder="0"
+        inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" autocomplete="off">
+    </label>`).join('')}
+    <div class="subline"><span>Sous-total catégories</span><b data-out="left">0</b></div>
+    <div class="cards-h">${icon('gem', 16)} Cartes</div>
+    ${p.cards.map((v, j) => `<div class="cardrow">
+      <span class="cidx">${j + 1}.</span>
+      <input class="slot" data-f="card" data-j="${j}" value="${esc(v)}" placeholder="0" aria-label="Carte ${j + 1}"
+        inputmode="numeric" pattern="[0-9]*" enterkeyhint="next" autocomplete="off">
+      <button class="ghost" data-act="rm-card" data-j="${j}" aria-label="Retirer la carte ${j + 1}">${icon('x', 15)}</button>
+    </div>`).join('')}
+    <button class="addcard" data-act="add-card">${icon('plus', 14)} Ajouter une carte</button>
+    <div class="subline"><span>Sous-total cartes</span><b data-out="right">0</b></div>
+    <div class="totbar"><span class="l">Total</span><span class="v" data-out="total">0</span></div>
+  </article>`;
+}
+
+function gameHTML() {
+  let notes = '';
+  if (!store.ok) notes += `<div class="notice warn"><span>Sauvegarde indisponible dans ce navigateur (navigation privée ?). Les parties seront perdues à la fermeture.</span></div>`;
+  if (S.editingId) notes += `<div class="notice"><span>${icon('edit', 16)} Correction d'une partie enregistrée</span><button data-act="cancel-edit">Annuler</button></div>`;
+  return `${notes}
+    <div class="grid">${S.players.map(playerHTML).join('')}</div>
+    <button class="addplayer" data-act="add-player">${icon('user', 17)} Ajouter un joueur</button>
+    <datalist id="known-names">${knownNames().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+}
+
+function updateTotals() {
+  const tots = S.players.map(totalOf);
+  const ranks = ranksOf(tots);
+  const max = Math.max(...tots);
+  S.players.forEach((p, i) => {
+    const el = view.querySelector(`[data-pid="${p.id}"]`);
+    if (!el) return;
+    el.querySelector('[data-out=left]').textContent = leftOf(p);
+    el.querySelector('[data-out=right]').textContent = rightOf(p);
+    el.querySelector('[data-out=total]').textContent = tots[i];
+    el.querySelector('[data-out=rank]').textContent = tots[i] > 0 ? medal(ranks[i]) : '';
+    el.classList.toggle('leader', max > 0 && tots[i] === max);
+  });
+  const order = S.players.map((p, i) => ({ p, i, t: tots[i], r: ranks[i] })).sort((a, b) => b.t - a.t || a.i - b.i);
+  strip.innerHTML = S.players.length > 1 ? order.map(o =>
+    `<button class="pill${max > 0 && o.t === max ? ' lead' : ''}" data-act="goto" data-pid="${o.p.id}">${o.t > 0 ? medal(o.r) + ' ' : ''}${esc(shownName(o.p, o.i))}<b>${o.t}</b></button>`
+  ).join('') : '';
+}
+
+function renderBar() {
+  const done = !!S.savedId;
+  bar.innerHTML = `<div class="bar-in">
+    <button class="btn btn-reset" data-act="reset">${icon('refresh', 17)} Nouvelle partie</button>
+    <button class="btn btn-save" data-act="save"${done ? ' disabled' : ''}>${icon(done ? 'check' : 'save', 18)}
+      ${done ? 'Partie enregistrée' : S.editingId ? 'Enregistrer la correction' : 'Enregistrer la partie'}</button>
+  </div>`;
+}
+
+/* ---------- ranking ---------- */
+function aggregate() {
+  const m = new Map();
+  S.history.forEach(g => { // newest first → first spelling seen is the latest
+    const tots = g.players.map(p => p.total);
+    const max = Math.max(...tots);
+    const ranks = ranksOf(tots);
+    g.players.forEach((p, i) => {
+      const k = nameKey(p.name);
+      if (!m.has(k)) m.set(k, { name: p.name.trim(), games: 0, points: 0, wins: 0, podiums: 0, best: 0, left: 0, right: 0 });
+      const s = m.get(k);
+      s.games++; s.points += p.total; s.left += p.left; s.right += p.right;
+      s.best = Math.max(s.best, p.total);
+      if (max > 0 && p.total === max) s.wins++;
+      if (ranks[i] <= 3 && g.players.length > 1) s.podiums++;
+    });
+  });
+  return [...m.values()].map(s => ({ ...s, avg: s.games ? Math.round(s.points / s.games * 10) / 10 : 0 }));
+}
+
+function rankingHTML() {
+  const rows = aggregate();
+  if (!rows.length) return `<div class="empty">${icon('trophy', 40)}<strong>Pas encore de classement</strong>
+    <p>Enregistre des parties : le classement des joueurs se construit tout seul.</p></div>`;
+  const by = S.rankSort;
+  const metric = r => by === 'wins' ? r.wins : by === 'avg' ? r.avg : r.points;
+  rows.sort((a, b) => metric(b) - metric(a) || b.wins - a.wins || b.avg - a.avg || a.name.localeCompare(b.name));
+  const ranks = ranksOf(rows.map(metric));
+  const big = r => by === 'wins' ? `${r.wins}<small>vict.</small>` : by === 'avg' ? `${r.avg}<small>moy.</small>` : `${r.points}<small>pts</small>`;
+  return `
+    <div class="toolbar"><span class="meta">${plural(S.history.length, 'partie')} enregistrée${S.history.length > 1 ? 's' : ''}</span></div>
+    <div class="sortbar" role="group" aria-label="Trier par">
+      ${[['wins', 'Victoires'], ['points', 'Points cumulés'], ['avg', 'Moyenne']].map(([k, l]) =>
+        `<button class="sortbtn" data-act="sort" data-sort="${k}" aria-pressed="${by === k}">${l}</button>`).join('')}
+    </div>
+    ${rows.map((r, i) => {
+      const tot = r.left + r.right;
+      const pl = tot > 0 ? Math.round(r.left / tot * 100) : 50;
+      return `<div class="lb">
+        <div class="lb-top"><span class="lb-rank">${medal(ranks[i])}</span><span class="lb-name">${esc(r.name)}</span><span class="lb-big">${big(r)}</span></div>
+        <div class="stats">
+          <div class="stat"><div class="k">Victoires</div><div class="n">${r.wins}</div></div>
+          <div class="stat"><div class="k">Parties</div><div class="n">${r.games}</div></div>
+          <div class="stat"><div class="k">% vict.</div><div class="n">${Math.round(r.wins / r.games * 100)}</div></div>
+          <div class="stat"><div class="k">Moyenne</div><div class="n">${r.avg}</div></div>
+          <div class="stat"><div class="k">Record</div><div class="n">${r.best}</div></div>
+          <div class="stat"><div class="k">Podiums</div><div class="n">${r.podiums}</div></div>
+        </div>
+        <div class="split" title="Origine des points">
+          <div class="split-bar"><i style="width:${pl}%;background:var(--c-left)"></i><i style="width:${100 - pl}%;background:var(--c-right)"></i></div>
+          <div class="split-leg"><span style="--dot:var(--c-left)">Catégories ${pl} %</span><span style="--dot:var(--c-right)">Cartes ${100 - pl} %</span></div>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+/* ---------- history ---------- */
+function historyHTML() {
+  const tools = `<div class="toolbar">
+    <span class="meta">${S.history.length ? plural(S.history.length, 'partie') : ''}</span>
+    ${S.history.length ? `<button class="tbtn" data-act="export">${icon('down', 15)} Exporter</button>` : ''}
+    <button class="tbtn" data-act="import">${icon('up', 15)} Importer</button>
+  </div>`;
+  if (!S.history.length) return tools + `<div class="empty">${icon('list', 40)}<strong>Aucune partie enregistrée</strong>
+    <p>Termine une partie et appuie sur « Enregistrer la partie » pour la retrouver ici.</p></div>`;
+  return tools + S.history.map(g => {
+    const ranked = g.players.map((p, i) => ({ ...p, i })).sort((a, b) => b.total - a.total);
+    const ranks = ranksOf(ranked.map(p => p.total));
+    const max = ranked[0].total;
+    const winners = ranked.filter(p => p.total === max).map(p => esc(p.name)).join(' & ');
+    const d = new Date(g.ts);
+    const date = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' })
+      + ' · ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const open = S.open.has(g.id);
+    return `<div class="lb">
+      <div class="lb-top">
+        <div style="flex:1;min-width:0">
+          <div class="h-date">${date}${S.editingId === g.id ? ' · en correction' : ''}</div>
+          <div class="h-win">${icon('trophy', 16)} ${winners} · ${max} pts</div>
+          <div class="h-list">${ranked.slice(1).map(p => `${esc(p.name)} ${p.total}`).join(' · ')}</div>
+        </div>
+        <button class="ghost" data-act="toggle" data-id="${g.id}" aria-expanded="${open}" aria-label="Détails">${icon('chev', 20).replace('<svg', '<svg class="chev"')}</button>
+      </div>
+      ${open ? `<div class="h-detail">
+        ${ranked.map((p, k) => `
+          <div class="h-pl"><span>${medal(ranks[k])} ${esc(p.name)}</span><span>${p.total} pts</span></div>
+          <div class="chips">
+            ${CATS.map(c => `<span class="chip"><i style="--c:${c.color}"></i>${c.label} ${p.cats[c.key]}</span>`).join('')}
+            <span class="chip">${icon('gem', 12)} Cartes ${p.right}${p.cards.length > 1 ? ` (${p.cards.join(' + ')})` : ''}</span>
+          </div>`).join('')}
+        <div class="h-actions">
+          <button data-act="edit" data-id="${g.id}">${icon('edit', 15)} Corriger</button>
+          <button data-act="del" data-id="${g.id}">${icon('trash', 15)} Supprimer</button>
+        </div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ================= actions ================= */
+const playerOf = el => S.players.find(p => p.id === el?.closest('[data-pid]')?.dataset.pid);
+const sheetHasScores = () => S.players.some(p => totalOf(p) !== 0);
+
+function touched() {
+  if (S.savedId) { S.savedId = null; renderBar(); }
+  persist();
+}
+
+function focusIn(pid, sel) {
+  const el = view.querySelector(`[data-pid="${pid}"] ${sel}`);
+  if (el) { el.focus({ preventScroll: false }); }
+}
+
+function addCard(p) {
+  p.cards.push('');
+  render(); touched();
+  focusIn(p.id, `[data-f=card][data-j="${p.cards.length - 1}"]`);
+}
+
+function saveGame() {
+  if (!sheetHasScores()) { toast('Saisis des points avant d’enregistrer'); return; }
+  const prev = S.editingId && S.history.find(g => g.id === S.editingId);
+  const game = {
+    id: prev ? prev.id : uid(),
+    ts: prev ? prev.ts : Date.now(),
+    players: S.players.map((p, i) => ({
+      name: shownName(p, i),
+      cats: Object.fromEntries(CATS.map(c => [c.key, num(p.cats[c.key])])),
+      cards: p.cards.filter(v => v !== '').map(num),
+      left: leftOf(p), right: rightOf(p), total: totalOf(p),
+    })),
+  };
+  if (prev) S.history = S.history.map(g => g.id === prev.id ? game : g);
+  else S.history.unshift(game);
+  S.savedId = game.id;
+  S.editingId = null;
+  persist(true);
+  render();
+  toast(prev ? 'Correction enregistrée ✓' : 'Partie enregistrée ✓');
+}
+
+function newGame(btn) {
+  if (sheetHasScores() && !S.savedId &&
+      !confirmTap(btn, `${icon('trash', 17)} Effacer sans enregistrer ?`)) return;
+  S.players = S.players.map(p => newPlayer(p.name));
+  S.savedId = null; S.editingId = null;
+  persist(true); render();
+  scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  toast('Nouvelle partie — mêmes joueurs');
+}
+
+function editGame(id, btn) {
+  const g = S.history.find(x => x.id === id);
+  if (!g) return;
+  if (sheetHasScores() && !S.savedId && S.editingId !== id &&
+      !confirmTap(btn, `${icon('edit', 15)} Remplacer la feuille en cours ?`)) return;
+  S.players = g.players.map(p => ({
+    id: uid(), name: p.name === 'Sans nom' ? '' : p.name,
+    cats: Object.fromEntries(CATS.map(c => [c.key, p.cats[c.key] ? String(p.cats[c.key]) : ''])),
+    cards: p.cards.length ? p.cards.map(String) : [p.right ? String(p.right) : ''],
+  }));
+  S.editingId = id; S.savedId = null; S.tab = 'game';
+  persist(true); render();
+  scrollTo({ top: 0 });
+  toast('Partie rouverte : corrige puis enregistre');
+}
+
+function exportHistory() {
+  const data = { app: 'compteur-points', version: 2, exportedAt: new Date().toISOString(), history: S.history };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `compteur-points-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  toast('Historique exporté');
+}
+
+importFile.addEventListener('change', async () => {
+  const f = importFile.files[0];
+  importFile.value = '';
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    const list = Array.isArray(d) ? d : d.history;
+    if (!Array.isArray(list)) throw new Error('format');
+    const ids = new Set(S.history.map(g => g.id));
+    const add = list.filter(g => g && g.id != null && Array.isArray(g.players) && g.players.length && !ids.has(String(g.id))).map(sanitizeGame);
+    S.history = [...S.history, ...add].sort((a, b) => b.ts - a.ts);
+    persist(true); render();
+    toast(add.length ? `${plural(add.length, 'partie')} importée${add.length > 1 ? 's' : ''}` : 'Rien de nouveau dans ce fichier');
+  } catch (e) { toast('Fichier illisible : choisis un export de cette app'); }
+});
+
+/* ================= events (delegated) ================= */
+view.addEventListener('input', e => {
+  const t = e.target, p = playerOf(t);
+  if (!p) return;
+  const f = t.dataset.f;
+  if (f === 'name') p.name = t.value.slice(0, 24);
+  else {
+    const v = cleanNum(t.value);
+    if (v !== t.value) t.value = v;
+    if (f === 'cat') p.cats[t.dataset.k] = v;
+    else if (f === 'card') p.cards[+t.dataset.j] = v;
+  }
+  updateTotals(); touched();
+});
+
+view.addEventListener('focusin', e => { if (e.target.classList.contains('slot')) e.target.select(); });
+
+/* Enter jumps to the next field; Enter on a filled last card adds a new card */
+view.addEventListener('keydown', e => {
+  const t = e.target;
+  if (e.key !== 'Enter' || t.tagName !== 'INPUT') return;
+  e.preventDefault();
+  if (t.dataset.f === 'card') {
+    const p = playerOf(t);
+    if (p && +t.dataset.j === p.cards.length - 1 && t.value !== '') { addCard(p); return; }
+  }
+  const inputs = [...view.querySelectorAll('.grid input')];
+  const next = inputs[inputs.indexOf(t) + 1];
+  next ? next.focus() : t.blur();
+});
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]');
+  if (!b) return;
+  const p = playerOf(b);
+  switch (b.dataset.act) {
+    case 'tab':
+      if (S.tab !== b.dataset.tab) { S.tab = b.dataset.tab; render(); scrollTo({ top: 0 }); }
+      break;
+    case 'add-player': {
+      const np = newPlayer();
+      S.players.push(np); render(); touched();
+      focusIn(np.id, '[data-f=name]');
+      break;
+    }
+    case 'rm-player':
+      if (S.players.length <= 1) { toast('Il faut au moins un joueur'); break; }
+      if ((totalOf(p) !== 0 || p.name.trim()) && !confirmTap(b, 'Retirer ?')) break;
+      S.players = S.players.filter(x => x !== p); render(); touched();
+      break;
+    case 'add-card': addCard(p); break;
+    case 'rm-card': {
+      const j = +b.dataset.j;
+      if (p.cards.length > 1) p.cards.splice(j, 1); else p.cards = [''];
+      render(); touched();
+      break;
+    }
+    case 'goto': {
+      const card = view.querySelector(`[data-pid="${b.dataset.pid}"]`);
+      if (!card) break;
+      card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+      card.classList.add('flashy'); setTimeout(() => card.classList.remove('flashy'), 900);
+      break;
+    }
+    case 'save': saveGame(); break;
+    case 'reset': newGame(b); break;
+    case 'cancel-edit':
+      S.editingId = null;
+      S.players = S.players.map(x => newPlayer(x.name));
+      persist(true); render(); toast('Correction annulée');
+      break;
+    case 'sort': S.rankSort = b.dataset.sort; render(); break;
+    case 'toggle': {
+      const id = b.dataset.id;
+      S.open.has(id) ? S.open.delete(id) : S.open.add(id);
+      render();
+      break;
+    }
+    case 'edit': editGame(b.dataset.id, b); break;
+    case 'del':
+      if (!confirmTap(b, `${icon('trash', 15)} Confirmer`)) break;
+      S.history = S.history.filter(g => g.id !== b.dataset.id);
+      if (S.editingId === b.dataset.id) S.editingId = null;
+      if (S.savedId === b.dataset.id) S.savedId = null;
+      persist(true); render(); toast('Partie supprimée');
+      break;
+    case 'export': exportHistory(); break;
+    case 'import': importFile.click(); break;
+  }
+});
+
+/* ================= boot ================= */
+render();
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
